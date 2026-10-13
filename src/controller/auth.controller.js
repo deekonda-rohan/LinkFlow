@@ -31,21 +31,16 @@ const clearAuthCookies = (res) => {
 };
 
 const generateAccessToken = (userId, sessionId) =>
-  jwt.sign(
-    { userId, sessionId },
-    process.env.ACCESSTOKEN_SECRET,
-    { expiresIn: "15m" }
-  );
+  jwt.sign({ userId, sessionId }, process.env.ACCESSTOKEN_SECRET, {
+    expiresIn: "15m",
+  });
 
 const generateRefreshToken = (userId, sessionId) =>
-  jwt.sign(
-    { userId, sessionId },
-    process.env.REFRESHTOKEN_SECRET,
-    { expiresIn: "7d" }
-  );
+  jwt.sign({ userId, sessionId }, process.env.REFRESHTOKEN_SECRET, {
+    expiresIn: "7d",
+  });
 
-const hashToken = (token) =>
-  createHash("sha256").update(token).digest("hex");
+const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 
 const userRegistrationController = async (req, res) => {
   try {
@@ -148,7 +143,7 @@ const refreshTokenController = async (req, res) => {
 
     const newRefreshToken = generateRefreshToken(
       decoded.userId,
-      decoded.sessionId
+      decoded.sessionId,
     );
     const newHash = hashToken(newRefreshToken);
 
@@ -160,17 +155,19 @@ const refreshTokenController = async (req, res) => {
         revoked: false,
       },
       { $set: { refreshTokenHash: newHash } },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedSession) {
       clearAuthCookies(res);
-      return res.status(401).json({ message: "Refresh token has already been used" });
+      return res
+        .status(401)
+        .json({ message: "Refresh token has already been used" });
     }
 
     const newAccessToken = generateAccessToken(
       decoded.userId,
-      decoded.sessionId
+      decoded.sessionId,
     );
     setAuthCookies(res, newAccessToken, newRefreshToken);
 
@@ -180,19 +177,86 @@ const refreshTokenController = async (req, res) => {
     });
   } catch (error) {
     clearAuthCookies(res);
-    return res.status(401).json({ message: "Invalid or expired refresh token" });
+    return res
+      .status(401)
+      .json({ message: "Invalid or expired refresh token" });
   }
 };
 
-const logoutController = async (req,res) =>{
-  const refreshToken = req.cookies.refreshToken;
+const getProfile = async (req, res) => {
+  const token = req.cookies?.accessToken;
 
-  
+  if (!token) {
+    return res.status(401).json({ message: "Access token is required" });
+  }
 
-}
+  const decoded = jwt.verify(token, process.env.ACCESSTOKEN_SECRET);
+  if (!decoded.userId || !decoded.sessionId) {
+    return res.status(401).json({ message: "Invalid access token" });
+  }
+
+  const session = await sessionModel.findOne({
+    _id: decoded.sessionId,
+    user: decoded.userId,
+    revoked: false,
+  });
+  if (!session) {
+    clearAuthCookies(res);
+    return res.status(401).json({ message: "Session is invalid" });
+  }
+
+  const user = await userModel.findById(decoded.userId).select("name email");
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  return res.status(200).json({
+    message: "User fetched successfully",
+    user: { username: user.name, email: user.email },
+  });
+};
+
+const logoutController = async (req, res) => {
+  const token = req.cookies?.refreshToken;
+
+  if (!token) {
+    clearAuthCookies(res);
+    return res.status(200).json({ message: "Logged out successfully" });
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.REFRESHTOKEN_SECRET);
+  } catch (error) {
+    clearAuthCookies(res);
+    return res.status(200).json({ message: "Logged out successfully" });
+  }
+
+  try {
+    if (decoded.userId && decoded.sessionId) {
+      await sessionModel.findOneAndUpdate(
+        {
+          _id: decoded.sessionId,
+          user: decoded.userId,
+          refreshTokenHash: hashToken(token),
+          revoked: false,
+        },
+        { $set: { revoked: true } },
+      );
+    }
+
+    clearAuthCookies(res);
+    return res.status(200).json({ message: "Logged out successfully" });
+  } catch (error) {
+    clearAuthCookies(res);
+    return res.status(500).json({ message: "Logout failed" });
+  }
+};
 
 module.exports = {
   userRegistrationController,
   userLoginController,
   refreshTokenController,
+  getProfile,
+  logoutController,
 };
