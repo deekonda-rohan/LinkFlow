@@ -5,22 +5,37 @@ const urlSchema = new mongoose.Schema(
     originalUrl: {
       type: String,
       required: true,
+      trim: true,
     },
-    shortUrl: {
+
+    shortCode: {
       type: String,
       required: true,
       unique: true,
+      index: true,
     },
-    clicks: {
+
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+
+    clickCount: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+
+    lastClickedAt: {
+      type: Date,
+      default: null,
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-const urlModel = mongoose.model("Url", urlSchema);
-
-module.exports = urlModel;
+module.exports = mongoose.model("Url", urlSchema);
