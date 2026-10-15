@@ -88,6 +88,43 @@ const createShortUrl = async (req, res) => {
   }
 };
 
+// ========================================
+// 2. REDIRECT SHORT URL + TRACK CLICKS
+// GET /:shortCode
+// ========================================
+const redirectShortUrl = async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+
+    const url = await Url.findOneAndUpdate(
+      { shortCode },
+      {
+        $inc: { clickCount: 1 },
+        $set: { lastClickedAt: new Date() },
+      },
+      { new: true }
+    );
+
+    if (!url) {
+      return res.status(404).json({
+        success: false,
+        message: "Short URL not found",
+      });
+    }
+
+    return res.redirect(302, url.originalUrl);
+  } catch (error) {
+    console.error("Redirect URL error:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to redirect",
+    });
+  }
+};
+
+
 module.exports = {
+  redirectShortUrl,
   createShortUrl,
 };
